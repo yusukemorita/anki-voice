@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 )
 
 var (
@@ -24,6 +26,8 @@ var (
 		"s8":     "s8a",
 		"s9":     "s9a",
 	}
+
+	soundTagRegex = regexp.MustCompile(`^\[sound:([^\]]+)\]$`)
 )
 
 func main() {
@@ -98,11 +102,6 @@ func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) erro
 			continue
 		}
 
-		// if strings.Contains(phrase.Audio, fmt.Sprintf("-%s.mp3", field)) {
-		// 	// audio has already been generated
-		// 	continue
-		// }
-
 		log.Printf("generating audio for: %s\n", phrase.Value)
 		outputPath := fmt.Sprintf("./output/%s.mp3", phrase.Value)
 		err := audio.GenerateMP3(phrase.Value, outputPath)
@@ -116,13 +115,13 @@ func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) erro
 			return err
 		}
 
-		audioFieldValue := fmt.Sprintf("[sound:%s]", filename)
+		newAudioFieldValue := fmt.Sprintf("[sound:%s]", filename)
 		tag := "audio-generated"
 		if dryRun {
-			log.Printf("skipping note update. audio: %s, tag: %s", audioFieldValue, tag)
+			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, tag)
 		} else {
 			log.Printf("updating field in anki: %s\n", phrase.Value)
-			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], audioFieldValue)
+			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], newAudioFieldValue)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -130,6 +129,22 @@ func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) erro
 			err = ankiconnect.AddNoteTag(note.NoteID, tag)
 			if err != nil {
 				log.Fatal(err)
+			}
+
+			// TODO: remove tag
+
+			// delete the old file
+			if phrase.Audio != "" && phrase.Audio != newAudioFieldValue {
+				trimmed := strings.TrimSpace(phrase.Audio)
+				if matches := soundTagRegex.FindStringSubmatch(trimmed); len(matches) == 2 {
+					oldFilename := matches[1]
+					oldFilePath := filepath.Join(ankiMediaDir, oldFilename)
+					if err := os.Remove(oldFilePath); err != nil {
+						log.Printf("failed to remove old audio %s: %v", oldFilePath, err)
+					}
+				} else {
+					log.Printf("unexpected audio format: %s", phrase.Audio)
+				}
 			}
 		}
 	}
