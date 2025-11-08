@@ -67,9 +67,11 @@ func UpdateNoteField(noteID int, fieldName, fieldValue string) error {
 		"action":  "updateNoteFields",
 		"version": 5,
 		"params": map[string]any{
-			"note": noteID,
-			"fields": map[string]any{
-				fieldName: fieldValue,
+			"note": map[string]any{
+				"id": noteID,
+				"fields": map[string]any{
+					fieldName: fieldValue,
+				},
 			},
 		},
 	}

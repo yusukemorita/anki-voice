@@ -3,15 +3,11 @@ package main
 import (
 	"anki-voice/ankiconnect"
 	"anki-voice/audio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
-	"strings"
-)
-
-const (
-	outputPathMp3 = "./output.mp3"
+	"path/filepath"
 )
 
 var (
@@ -31,12 +27,32 @@ var (
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		log.Fatal("noteID argument required")
+	// flags setup
+	noteIDFlag := flag.Int("note", 0, "noteID to update audio of")
+	dryRunFlag := flag.Bool("dryrun", false, "set to true to skip update of the note in anki")
+	overwriteFlag := flag.Bool("overwrite", false, "set to true to overwrite existing audio")
+	flag.Parse()
+
+	noteID := *noteIDFlag
+	if noteID == 0 {
+		log.Fatal("-note argument is required")
 	}
-	noteID, err := strconv.Atoi(os.Args[1])
+
+	dryRun := *dryRunFlag
+	overwrite := *overwriteFlag
+
+	// anki media directory setup
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("invalid noteID %q: %v", os.Args[1], err)
+		log.Fatal(err)
+	}
+	ankiMediaDir := filepath.Join(homeDir, "Library", "Application Support", "Anki2", "User 1", "collection.media")
+	info, err := os.Stat(ankiMediaDir)
+	if err != nil {
+		log.Fatalf("anki media directory missing: %v", err)
+	}
+	if !info.IsDir() {
+		log.Fatalf("anki media path is not a directory: %s", ankiMediaDir)
 	}
 
 	note, err := ankiconnect.GetNote(noteID, fields)
@@ -44,23 +60,51 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
+
 	for field, phrase := range note.Phrases {
 		if phrase.Value == "" {
 			continue
 		}
 
-		if strings.Contains(phrase.Audio, fmt.Sprintf("-%s.mp3", field)) {
+		if phrase.Audio != "" && !overwrite {
 			// audio has already been generated
 			continue
 		}
 
-		log.Printf("generating audio for: %s...\n", phrase.Value)
+		// if strings.Contains(phrase.Audio, fmt.Sprintf("-%s.mp3", field)) {
+		// 	// audio has already been generated
+		// 	continue
+		// }
 
+		log.Printf("generating audio for: %s\n", phrase.Value)
 		outputPath := fmt.Sprintf("./output/%s.mp3", phrase.Value)
-
 		err = audio.GenerateMP3(phrase.Value, outputPath)
 		if err != nil {
 			log.Fatal(err)
+		}
+
+		filename := fmt.Sprintf("%d-%s.mp3", noteID, field)
+		err = os.Rename(outputPath, filepath.Join(ankiMediaDir, filename))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		audioFieldValue := fmt.Sprintf("[sound:%s]", filename)
+		tag := "audio-generated"
+		if dryRun {
+			log.Printf("skipping note update. audio: %s, tag: %s", audioFieldValue, tag)
+		} else {
+			log.Printf("updating field in anki: %s\n", phrase.Value)
+			err = ankiconnect.UpdateNoteField(noteID, fields[field], audioFieldValue)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			err = ankiconnect.AddNoteTag(noteID, tag)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 	}
 }
