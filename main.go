@@ -27,7 +27,8 @@ var (
 		"s9":     "s9a",
 	}
 
-	soundTagRegex = regexp.MustCompile(`^\[sound:([^\]]+)\]$`)
+	audioGeneratedTag = "audio-generated"
+	soundRegex        = regexp.MustCompile(`^\[sound:([^\]]+)\]$`)
 )
 
 func main() {
@@ -36,12 +37,14 @@ func main() {
 	dryRunFlag := flag.Bool("dryrun", false, "set to true to skip update of the note in anki")
 	queryFlag := flag.String("query", "", "use an anki query to filter which cards to update")
 	overwriteFlag := flag.Bool("overwrite", false, "set to true to overwrite existing audio")
+	removeTagFlag := flag.String("removetag", "", "remove the specified tag when update of a note succeeds")
 	flag.Parse()
 
 	noteID := *noteIDFlag
 	dryRun := *dryRunFlag
 	overwrite := *overwriteFlag
 	query := *queryFlag
+	tagToRemove := *removeTagFlag
 
 	// anki media directory setup
 	homeDir, err := os.UserHomeDir()
@@ -60,7 +63,7 @@ func main() {
 	switch {
 	case noteID != 0:
 		log.Println("Update one note")
-		err = updateOneNote(noteID, ankiMediaDir, dryRun, overwrite)
+		err = updateOneNote(noteID, ankiMediaDir, tagToRemove, dryRun, overwrite)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -74,7 +77,7 @@ func main() {
 		}
 
 		for _, id := range ids {
-			err = updateOneNote(id, ankiMediaDir, dryRun, overwrite)
+			err = updateOneNote(id, ankiMediaDir, tagToRemove, dryRun, overwrite)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -84,7 +87,7 @@ func main() {
 	}
 }
 
-func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) error {
+func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, overwrite bool) error {
 	note, err := ankiconnect.GetNote(noteID, fields)
 	if err != nil {
 		log.Fatal(err)
@@ -116,9 +119,8 @@ func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) erro
 		}
 
 		newAudioFieldValue := fmt.Sprintf("[sound:%s]", filename)
-		tag := "audio-generated"
 		if dryRun {
-			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, tag)
+			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, audioGeneratedTag)
 		} else {
 			log.Printf("updating field in anki: %s\n", phrase.Value)
 			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], newAudioFieldValue)
@@ -126,17 +128,22 @@ func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) erro
 				log.Fatal(err)
 			}
 
-			err = ankiconnect.AddNoteTag(note.NoteID, tag)
+			err = ankiconnect.AddNoteTag(note.NoteID, audioGeneratedTag)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			// TODO: remove tag
+			if tagToRemove != "" {
+				err = ankiconnect.RemoveNoteTag(noteID, tagToRemove)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
 
 			// delete the old file
 			if phrase.Audio != "" && phrase.Audio != newAudioFieldValue {
 				trimmed := strings.TrimSpace(phrase.Audio)
-				if matches := soundTagRegex.FindStringSubmatch(trimmed); len(matches) == 2 {
+				if matches := soundRegex.FindStringSubmatch(trimmed); len(matches) == 2 {
 					oldFilename := matches[1]
 					oldFilePath := filepath.Join(ankiMediaDir, oldFilename)
 					if err := os.Remove(oldFilePath); err != nil {

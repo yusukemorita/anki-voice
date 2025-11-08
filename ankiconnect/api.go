@@ -137,6 +137,24 @@ func AddNoteTag(noteID int, tag string) error {
 	return nil
 }
 
+func RemoveNoteTag(noteID int, tag string) error {
+	payload := map[string]any{
+		"action":  "removeTags",
+		"version": 5,
+		"params": map[string]any{
+			"notes": []int{noteID},
+			"tags":  tag,
+		},
+	}
+
+	_, err := sendRequest(payload)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func sendRequest(payload map[string]any) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
