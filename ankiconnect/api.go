@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -82,8 +81,6 @@ func QueryNotes(query string) ([]int, error) {
 	if errMsg := gjson.GetBytes(responseBody, "error"); errMsg.Exists() && errMsg.String() != "" {
 		return nil, fmt.Errorf("anki connect error: %s", errMsg.String())
 	}
-
-	log.Println(string(responseBody))
 
 	gjsonResult := gjson.GetBytes(responseBody, "result")
 	if !gjsonResult.Exists() {

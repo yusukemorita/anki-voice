@@ -55,7 +55,7 @@ func main() {
 
 	switch {
 	case noteID != 0:
-		log.Println("branch: one note")
+		log.Println("Update one note")
 		err = updateOneNote(noteID, ankiMediaDir, dryRun, overwrite)
 		if err != nil {
 			log.Fatal(err)
@@ -63,7 +63,7 @@ func main() {
 		break
 
 	case query != "":
-		log.Println("branch: query")
+		log.Println("Update notes that match query")
 		ids, err := ankiconnect.QueryNotes(query)
 		if err != nil {
 			log.Fatal(err)
