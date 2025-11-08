@@ -1,0 +1,13 @@
+---
+services:
+  piper:
+    image: artibex/piper-http
+    container_name: piper
+    environment:
+      - MODEL_DOWNLOAD_LINK=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx
+      - JSON_DOWNLOAD_LINK=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/high/de_DE-thorsten-high.onnx.json
+    volumes:
+      - ./data:/data
+    ports:
+      - 9999:5000
+    # restart: unless-stopped
