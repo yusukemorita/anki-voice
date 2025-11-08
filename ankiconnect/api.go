@@ -3,8 +3,10 @@ package ankiconnect
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -61,6 +63,42 @@ func GetNote(noteID int, fields map[string]string) (Note, error) {
 
 	return result, nil
 }
+
+// QueryNotes retrieves note IDs with the given anki query
+func QueryNotes(query string) ([]int, error) {
+	payload := map[string]any{
+		"action":  "findNotes",
+		"version": 5,
+		"params": map[string]any{
+			"query": query,
+		},
+	}
+
+	responseBody, err := sendRequest(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if errMsg := gjson.GetBytes(responseBody, "error"); errMsg.Exists() && errMsg.String() != "" {
+		return nil, fmt.Errorf("anki connect error: %s", errMsg.String())
+	}
+
+	log.Println(string(responseBody))
+
+	gjsonResult := gjson.GetBytes(responseBody, "result")
+	if !gjsonResult.Exists() {
+		return nil, errors.New("gjsonResult doesn't exist")
+	}
+
+	var ids []int
+
+	for _, result := range gjsonResult.Array() {
+		ids = append(ids, int(result.Int()))
+	}
+
+	return ids, nil
+}
+
 
 func UpdateNoteField(noteID int, fieldName, fieldValue string) error {
 	payload := map[string]any{

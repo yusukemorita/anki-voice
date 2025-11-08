@@ -20,4 +20,5 @@ bash anki-multiple-notes.sh 10 # number of cards to update
 
 ## references
 
-- piper HTTP API: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_HTTP.md
+- [piper HTTP API](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_HTTP.md)
+- [AnkiConnect](https://github.com/amikey/anki-connect)

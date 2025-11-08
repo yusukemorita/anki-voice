@@ -30,16 +30,14 @@ func main() {
 	// flags setup
 	noteIDFlag := flag.Int("note", 0, "noteID to update audio of")
 	dryRunFlag := flag.Bool("dryrun", false, "set to true to skip update of the note in anki")
+	queryFlag := flag.String("query", "", "use an anki query to filter which cards to update")
 	overwriteFlag := flag.Bool("overwrite", false, "set to true to overwrite existing audio")
 	flag.Parse()
 
 	noteID := *noteIDFlag
-	if noteID == 0 {
-		log.Fatal("-note argument is required")
-	}
-
 	dryRun := *dryRunFlag
 	overwrite := *overwriteFlag
+	query := *queryFlag
 
 	// anki media directory setup
 	homeDir, err := os.UserHomeDir()
@@ -55,6 +53,34 @@ func main() {
 		log.Fatalf("anki media path is not a directory: %s", ankiMediaDir)
 	}
 
+	switch {
+	case noteID != 0:
+		log.Println("branch: one note")
+		err = updateOneNote(noteID, ankiMediaDir, dryRun, overwrite)
+		if err != nil {
+			log.Fatal(err)
+		}
+		break
+
+	case query != "":
+		log.Println("branch: query")
+		ids, err := ankiconnect.QueryNotes(query)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, id := range ids {
+			err = updateOneNote(id, ankiMediaDir, dryRun, overwrite)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		break
+	}
+}
+
+func updateOneNote(noteID int, ankiMediaDir string, dryRun, overwrite bool) error {
 	note, err := ankiconnect.GetNote(noteID, fields)
 	if err != nil {
 		log.Fatal(err)
@@ -79,15 +105,15 @@ func main() {
 
 		log.Printf("generating audio for: %s\n", phrase.Value)
 		outputPath := fmt.Sprintf("./output/%s.mp3", phrase.Value)
-		err = audio.GenerateMP3(phrase.Value, outputPath)
+		err := audio.GenerateMP3(phrase.Value, outputPath)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
-		filename := fmt.Sprintf("%d-%s.mp3", noteID, field)
+		filename := fmt.Sprintf("%d-%s.mp3", note.NoteID, field)
 		err = os.Rename(outputPath, filepath.Join(ankiMediaDir, filename))
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		audioFieldValue := fmt.Sprintf("[sound:%s]", filename)
@@ -96,17 +122,19 @@ func main() {
 			log.Printf("skipping note update. audio: %s, tag: %s", audioFieldValue, tag)
 		} else {
 			log.Printf("updating field in anki: %s\n", phrase.Value)
-			err = ankiconnect.UpdateNoteField(noteID, fields[field], audioFieldValue)
+			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], audioFieldValue)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			err = ankiconnect.AddNoteTag(noteID, tag)
+			err = ankiconnect.AddNoteTag(note.NoteID, tag)
 			if err != nil {
 				log.Fatal(err)
 			}
 		}
 	}
+
+	return nil
 }
 
 func keys(m map[string]string) []string {
