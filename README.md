@@ -1,17 +1,34 @@
 # anki-voice
 
-## generate audio from text
+## Usage
 
-```console
-docker compose up -d
-bash generate.sh "Der Arzt verschrieb dem Patienten ein neues Arzneimittel."
-```
+### prerequisites
 
-## add audio to existing cards
+1. Run the piper voice generation docker container
+  ```console
+  docker compose up -d
+  ```
 
-1. Open the Anki desktop app (with [AnkiConnect](https://github.com/amikey/anki-connect) installed)
-2. Run the following
+2. Have anki (with the ankiconnect addon installed) running
+
+### fill in missing audio in one note 
 
 ```sh
-bash anki-multiple-notes.sh 10 # number of cards to update
+docker compose up -d
+go run main.go -note 123456789 # replace 123456789 with the note id
 ```
+
+### add audio for all notes that match an anki query
+
+```sh
+docker compose up -d
+# to only fill in missing audio
+go run main.go -query "tag:audio"
+# or, to overwrite all audio
+go run main.go -query "tag:audio" -overwrite
+```
+
+## references
+
+- [piper HTTP API](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_HTTP.md)
+- [AnkiConnect](https://github.com/amikey/anki-connect)
