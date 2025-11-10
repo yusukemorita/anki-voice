@@ -10,11 +10,14 @@ import (
 	"strings"
 )
 
-
 func GenerateMP3(text, outputPath string) error {
 	wavPath := fmt.Sprintf("%s.wav", outputPath)
 
-	err := generateWav(text, wavPath) 
+	// ignore non breaking spaces
+	trimmed := strings.ReplaceAll(text, "&nbsp;", "")
+	trimmed = strings.TrimSpace(trimmed)
+
+	err := generateWav(trimmed, wavPath)
 	if err != nil {
 		return err
 	}
