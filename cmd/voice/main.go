@@ -1,6 +1,7 @@
 package main
 
 import (
+	"anki-voice/anki"
 	"anki-voice/ankiconnect"
 	"anki-voice/audio"
 	"flag"
@@ -27,7 +28,6 @@ var (
 		"s9":     "s9a",
 	}
 
-	audioGeneratedTag = "audio-generated"
 	soundRegex        = regexp.MustCompile(`^\[sound:([^\]]+)\]$`)
 )
 
@@ -48,18 +48,9 @@ func main() {
 	tagToRemove := *removeTagFlag
 	limit := *limitFlag
 
-	// anki media directory setup
-	homeDir, err := os.UserHomeDir()
+	ankiMediaDir, err := anki.MediaDir()
 	if err != nil {
 		log.Fatal(err)
-	}
-	ankiMediaDir := filepath.Join(homeDir, "Library", "Application Support", "Anki2", "User 1", "collection.media")
-	info, err := os.Stat(ankiMediaDir)
-	if err != nil {
-		log.Fatalf("anki media directory missing: %v", err)
-	}
-	if !info.IsDir() {
-		log.Fatalf("anki media path is not a directory: %s", ankiMediaDir)
 	}
 
 	switch {
@@ -126,7 +117,7 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 
 		newAudioFieldValue := fmt.Sprintf("[sound:%s]", filename)
 		if dryRun {
-			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, audioGeneratedTag)
+			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, anki.AudioGeneratedTag)
 		} else {
 			log.Printf("updating field in anki: %s\n", text)
 			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], newAudioFieldValue)
@@ -151,7 +142,7 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 	}
 
 	if !dryRun {
-		err = ankiconnect.AddNoteTag(note.NoteID, audioGeneratedTag)
+		err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioGeneratedTag)
 		if err != nil {
 			return err
 		}
@@ -166,13 +157,4 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 	}
 
 	return nil
-}
-
-func keys(m map[string]string) []string {
-	allKeys := make([]string, 0, len(m))
-	for k := range m {
-		allKeys = append(allKeys, k)
-	}
-
-	return allKeys
 }

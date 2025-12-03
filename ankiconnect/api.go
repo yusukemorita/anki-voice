@@ -24,6 +24,39 @@ type Phrase struct {
 	Audio string // the audio field value. format is typically [sound:filename.mp3], and can also be empty.
 }
 
+// AddNote adds a note with the given fields, and returns the noteID
+func AddNote(fields map[string]string) (int, error) {
+	payload := map[string]any{
+		"action":  "addNote",
+		"version": 5,
+		"params": map[string]any{
+			"note": map[string]any{
+				"deckName":  "Default",
+				"modelName": "Basic (and reversed card)-7c609",
+				"fields":    fields,
+				"tags":      []string{"gemini-generated"},
+			},
+		},
+	}
+
+	responseBody, err := sendRequest(payload)
+	if err != nil {
+		return 0, err
+	}
+
+	if errMsg := gjson.GetBytes(responseBody, "error"); errMsg.Exists() && errMsg.String() != "" {
+		return 0, fmt.Errorf("anki connect error: %s", errMsg.String())
+	}
+
+	result := gjson.GetBytes(responseBody, "result")
+	if !result.Exists() {
+		return 0, errors.New("note ID not returned")
+	}
+
+	noteID := result.Int()
+	return int(noteID), nil
+}
+
 // GetNote retrieves the fields of the note with the given noteID
 func GetNote(noteID int, fields map[string]string) (Note, error) {
 	payload := map[string]any{
@@ -95,7 +128,6 @@ func QueryNotes(query string) ([]int, error) {
 
 	return ids, nil
 }
-
 
 func UpdateNoteField(noteID int, fieldName, fieldValue string) error {
 	payload := map[string]any{
