@@ -2,3 +2,5 @@
 
 output/*
 !output/.gitkeep
+
+cmd/generate-card/GEMINI_API_KEY
