@@ -24,7 +24,7 @@ type Phrase struct {
 	Audio string // the audio field value. format is typically [sound:filename.mp3], and can also be empty.
 }
 
-// returns noteID
+// AddNote adds a note with the given fields, and returns the noteID
 func AddNote(fields map[string]string) (int, error) {
 	payload := map[string]any{
 		"action":  "addNote",

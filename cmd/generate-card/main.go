@@ -102,15 +102,21 @@ func main() {
 	word := os.Args[1]
 	log.Printf("word: %s", word)
 
+	// general setup
 	ctx := context.Background()
-
-	config := &genai.ClientConfig{APIKey: GEMINI_API_KEY}
-	client, err := genai.NewClient(ctx, config)
+	ankiMediaDir, err := anki.MediaDir()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	result, err := client.Models.GenerateContent(
+  // Gemini setup
+	geminiClient, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: GEMINI_API_KEY})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// retrieve result from Gemini
+	result, err := geminiClient.Models.GenerateContent(
 		ctx,
 		"gemini-2.5-flash",
 		genai.Text(fmt.Sprintf(PROMPT, word)),
@@ -121,35 +127,28 @@ func main() {
 	}
 	log.Printf("Gemini response: \n%s\n", result.Text())
 
-	// remove the code block
+	// remove the code block that Gemini prefers to add to the response
 	jsonText := result.Text()
 	jsonText = strings.TrimPrefix(jsonText, "```json")
 	jsonText = strings.TrimSuffix(jsonText, "```")
 
+	// unmarshal the JSON that was in the code block
 	var response GeminiResponse
 	err = json.Unmarshal([]byte(jsonText), &response)
 	if err != nil {
 		log.Fatalf("failed to unmarshal response:\n%s\n", result.Text())
 	}
 
+	// add the note
 	log.Println("Adding note...")
-
-	fields := response.toMap()
-
-	ankiMediaDir, err := anki.MediaDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	noteID, err := ankiconnect.AddNote(fields)
+	noteID, err := ankiconnect.AddNote(response.toMap())
 	if err != nil {
 		log.Fatalf("failed to add note: %s", err)
 	}
-
 	log.Printf("Added note: %d", noteID)
 
+	// add audio to the note
 	addAudioToNote(noteID, ankiMediaDir)
-
 	log.Printf("Added audio to note: %d", noteID)
 }
 

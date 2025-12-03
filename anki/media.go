@@ -7,7 +7,6 @@ import (
 )
 
 func MediaDir() (string, error) {
-	// anki media directory setup
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
