@@ -23,9 +23,15 @@ go run main.go -note 123456789 # replace 123456789 with the note id
 ```sh
 docker compose up -d
 # to only fill in missing audio
-go run main.go -query "tag:audio"
+go run cmd/voice/main.go -query "tag:audio"
 # or, to overwrite all audio
-go run main.go -query "tag:audio" -overwrite
+go run cmd/voice/main.go -query "tag:audio" -overwrite
+
+# generate audio for all chatgpt generated tags that don't have generated audio yet
+go run cmd/voice/main.go -query "tag:chatgpt-generated -tag:audio-generated"
+
+# generate and overwrite audio for all audio tags, and then remove the tag
+go run cmd/voice/main.go -query "tag:audio" -removetag "audio" -overwrite limit 10
 ```
 
 ## references
