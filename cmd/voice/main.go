@@ -34,6 +34,7 @@ var (
 func main() {
 	// flags setup
 	noteIDFlag := flag.Int("note", 0, "noteID to update audio of")
+	limitFlag := flag.Int("limit", 0, "limit the number of cards to update")
 	dryRunFlag := flag.Bool("dryrun", false, "set to true to skip update of the note in anki")
 	queryFlag := flag.String("query", "", "use an anki query to filter which cards to update")
 	overwriteFlag := flag.Bool("overwrite", false, "set to true to overwrite existing audio")
@@ -45,6 +46,7 @@ func main() {
 	overwrite := *overwriteFlag
 	query := *queryFlag
 	tagToRemove := *removeTagFlag
+	limit := *limitFlag
 
 	// anki media directory setup
 	homeDir, err := os.UserHomeDir()
@@ -67,8 +69,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		break
-
 	case query != "":
 		log.Println("Update notes that match query")
 		ids, err := ankiconnect.QueryNotes(query)
@@ -76,14 +76,16 @@ func main() {
 			log.Fatal(err)
 		}
 
-		for _, id := range ids {
+		for index, id := range ids {
 			err = updateOneNote(id, ankiMediaDir, tagToRemove, dryRun, overwrite)
 			if err != nil {
 				log.Fatal(err)
 			}
-		}
 
-		break
+			if limit != 0 && index+1 >= limit {
+				break
+			}
+		}
 	}
 }
 
@@ -96,7 +98,11 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
 
 	for field, phrase := range note.Phrases {
-		if phrase.Value == "" {
+		// ignore non breaking spaces
+		text := strings.ReplaceAll(phrase.Value, "&nbsp;", "")
+		text = strings.TrimSpace(text)
+
+		if text == "" {
 			continue
 		}
 
@@ -105,9 +111,9 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 			continue
 		}
 
-		log.Printf("generating audio for: %s\n", phrase.Value)
-		outputPath := fmt.Sprintf("./output/%s.mp3", phrase.Value)
-		err := audio.GenerateMP3(phrase.Value, outputPath)
+		log.Printf("generating audio for: '%s'\n", text)
+		outputPath := fmt.Sprintf("./output/%s.mp3", text)
+		err := audio.GenerateMP3(text, outputPath)
 		if err != nil {
 			return err
 		}
@@ -122,22 +128,10 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 		if dryRun {
 			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, audioGeneratedTag)
 		} else {
-			log.Printf("updating field in anki: %s\n", phrase.Value)
+			log.Printf("updating field in anki: %s\n", text)
 			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], newAudioFieldValue)
 			if err != nil {
-				log.Fatal(err)
-			}
-
-			err = ankiconnect.AddNoteTag(note.NoteID, audioGeneratedTag)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if tagToRemove != "" {
-				err = ankiconnect.RemoveNoteTag(noteID, tagToRemove)
-				if err != nil {
-					log.Fatal(err)
-				}
+				return err
 			}
 
 			// delete the old file
@@ -152,6 +146,21 @@ func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, 
 				} else {
 					log.Printf("unexpected audio format: %s", phrase.Audio)
 				}
+			}
+		}
+	}
+
+	if !dryRun {
+		err = ankiconnect.AddNoteTag(note.NoteID, audioGeneratedTag)
+		if err != nil {
+			return err
+		}
+
+		if tagToRemove != "" {
+			log.Printf("removing tag in anki: %s\n", tagToRemove)
+			err = ankiconnect.RemoveNoteTag(noteID, tagToRemove)
+			if err != nil {
+				return err
 			}
 		}
 	}
