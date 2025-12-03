@@ -1,18 +1,32 @@
 package main
 
 import (
+	"anki-voice/anki"
 	"anki-voice/ankiconnect"
+	"anki-voice/audio"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"google.golang.org/genai"
 )
 
 //go:embed GEMINI_API_KEY
 var GEMINI_API_KEY string
+
+// key: field in German, value: audio field
+var audioFields = map[string]string{
+	"base_d": "base_a",
+	"s1":     "s1a",
+	"s2":     "s2a",
+	"s3":     "s3a",
+	"s4":     "s4a",
+}
 
 const PROMPT = `
 Return the following fields in a JSON structure for the word: %s
@@ -43,7 +57,7 @@ The values will be used for creating Anki cards to learn German vocabulary.
 
 Other things to note: 
 * If the word is in plural, convert it to singular
-* Return ONLY the JSON object, do not include any other content or text. This means that EVEN BACKSLASHES TO INDICATE CODEBLOCKS SHOULD BE OMITTED!!!
+* Return ONLY the JSON object wrapped in a json code block, and do not include any other content or text.
 `
 
 type GeminiResponse struct {
@@ -81,9 +95,14 @@ func (response GeminiResponse) toMap() map[string]string {
 }
 
 func main() {
-	ctx := context.Background()
+	if len(os.Args) < 2 {
+		log.Fatal("missing arg: word to add to anki")
+	}
 
-	fmt.Printf("API KEY: %s\n", GEMINI_API_KEY)
+	word := os.Args[1]
+	log.Printf("word: %s", word)
+
+	ctx := context.Background()
 
 	config := &genai.ClientConfig{APIKey: GEMINI_API_KEY}
 	client, err := genai.NewClient(ctx, config)
@@ -94,28 +113,88 @@ func main() {
 	result, err := client.Models.GenerateContent(
 		ctx,
 		"gemini-2.5-flash",
-		genai.Text(fmt.Sprintf(PROMPT, "Sackerl")),
+		genai.Text(fmt.Sprintf(PROMPT, word)),
 		nil,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(result.Text())
+	log.Printf("Gemini response: \n%s\n", result.Text())
+
+	// remove the code block
+	jsonText := result.Text()
+	jsonText = strings.TrimPrefix(jsonText, "```json")
+	jsonText = strings.TrimSuffix(jsonText, "```")
 
 	var response GeminiResponse
-	err = json.Unmarshal([]byte(result.Text()), &response)
+	err = json.Unmarshal([]byte(jsonText), &response)
 	if err != nil {
 		log.Fatalf("failed to unmarshal response:\n%s\n", result.Text())
 	}
 
-	fmt.Printf("Creating note from gemini response: \n%+v\n", response)
+	log.Println("Adding note...")
 
-	noteID, err := ankiconnect.AddNote(response.toMap())
+	fields := response.toMap()
+
+	ankiMediaDir, err := anki.MediaDir()
 	if err != nil {
-		log.Fatalf("failed to create note: %s", err)
+		log.Fatal(err)
 	}
 
-	fmt.Printf("success! created note: %d", noteID)
+	noteID, err := ankiconnect.AddNote(fields)
+	if err != nil {
+		log.Fatalf("failed to add note: %s", err)
+	}
 
+	log.Printf("Added note: %d", noteID)
 
+	addAudioToNote(noteID, ankiMediaDir)
+
+	log.Printf("Added audio to note: %d", noteID)
+}
+
+func addAudioToNote(noteID int, ankiMediaDir string) error {
+	note, err := ankiconnect.GetNote(noteID, audioFields)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
+
+	for field, phrase := range note.Phrases {
+		// ignore non breaking spaces
+		text := strings.ReplaceAll(phrase.Value, "&nbsp;", "")
+		text = strings.TrimSpace(text)
+
+		if text == "" {
+			continue
+		}
+
+		log.Printf("generating audio for: '%s'\n", text)
+		outputPath := fmt.Sprintf("./output/%s.mp3", text)
+		err := audio.GenerateMP3(text, outputPath)
+		if err != nil {
+			return err
+		}
+
+		filename := fmt.Sprintf("%d-%s.mp3", note.NoteID, field)
+		err = os.Rename(outputPath, filepath.Join(ankiMediaDir, filename))
+		if err != nil {
+			return err
+		}
+
+		newAudioFieldValue := fmt.Sprintf("[sound:%s]", filename)
+		log.Printf("updating field in anki: %s\n", text)
+		err = ankiconnect.UpdateNoteField(note.NoteID, audioFields[field], newAudioFieldValue)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioGeneratedTag)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
