@@ -13,6 +13,7 @@ import (
 )
 
 const ankiURI = "http://localhost:8765"
+const deckName = "B1_Wortliste_DTZ_Goethe"
 
 type Note struct {
 	NoteID  int
@@ -31,7 +32,7 @@ func AddNote(fields map[string]string) (int, error) {
 		"version": 5,
 		"params": map[string]any{
 			"note": map[string]any{
-				"deckName":  "Default",
+				"deckName":  deckName,
 				"modelName": "Basic (and reversed card)-7c609",
 				"fields":    fields,
 				"tags":      []string{"gemini-generated"},
