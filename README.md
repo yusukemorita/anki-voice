@@ -27,7 +27,7 @@ go run cmd/voice/main.go -query "tag:audio" -overwrite
 go run cmd/voice/main.go -query "tag:chatgpt-generated -tag:audio-generated"
 
 # generate and overwrite audio for all audio tags, and then remove the tag
-go run cmd/voice/main.go -query "tag:audio" -removetag "audio" -overwrite limit 10
+go run cmd/voice/main.go -query "tag:audio" -removetag "audio" -overwrite -limit 10
 ```
 
 ## generate-card usage
@@ -35,8 +35,16 @@ go run cmd/voice/main.go -query "tag:audio" -removetag "audio" -overwrite limit 
 `generate-card` automatically generates an anki card for a given word, complete with audio.
 Prerequisites are the same as `anki-voice`.
 
-```
+### generate a note for a single word
+
+```console
 go run cmd/generate-card/main.go benehmen
+```
+
+### generate notes for words in german_vocab.txt
+
+```console
+go run cmd/generate-card/main.go -limit 10
 ```
 
 ## references

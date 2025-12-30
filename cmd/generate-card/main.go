@@ -4,20 +4,21 @@ import (
 	"anki-voice/anki"
 	"anki-voice/ankiconnect"
 	"anki-voice/audio"
+	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"google.golang.org/genai"
 )
-
-//go:embed GEMINI_API_KEY
-var GEMINI_API_KEY string
 
 // key: field in German, value: audio field
 var audioFields = map[string]string{
@@ -96,12 +97,19 @@ func (response GeminiResponse) toMap() map[string]string {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("missing arg: word to add to anki")
+	if err := godotenv.Load(); err != nil {
+		log.Fatal("no .env file found; using existing environment")
 	}
 
-	word := os.Args[1]
-	log.Printf("word: %s", word)
+	GEMINI_API_KEY := os.Getenv("GEMINI_API_KEY")
+	if GEMINI_API_KEY == "" {
+		log.Fatal("GEMINI_API_KEY is not set")
+	}
+
+	VOCAB_FILE := os.Getenv("VOCAB_FILE")
+	if GEMINI_API_KEY == "" {
+		log.Fatal("VOCAB_FILE is not set")
+	}
 
 	// general setup
 	ctx := context.Background()
@@ -116,9 +124,48 @@ func main() {
 		log.Fatal(err)
 	}
 
+	wordFlag := flag.String("word", "", "word to generate a note for")
+	word := *wordFlag
+
+	limitFlag := flag.Int("limit", 100, "maximum number of notes to generate")
+	limit := *limitFlag
+	
+	if word == "" {
+		generateNoteForWordsInVocabFile(word, geminiClient, ankiMediaDir, VOCAB_FILE, limit)
+	} else {
+		generateNote(word, geminiClient, ankiMediaDir)
+	}
+}
+
+func generateNoteForWordsInVocabFile(word string, geminiClient *genai.Client, ankiMediaDir string, vocabFilePath string, limit int) {
+	isEmpty := false
+	count := 0
+
+	for {
+		var err error
+		isEmpty, err = popFirstLine(vocabFilePath, func(line string) {
+			generateNote(line, geminiClient, ankiMediaDir)
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if isEmpty {
+			break
+		}
+
+		count++ 
+		if count >= limit {
+			log.Println("reached limit")
+			break
+		}
+	}
+}
+
+func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) {
 	// retrieve result from Gemini
 	result, err := geminiClient.Models.GenerateContent(
-		ctx,
+		context.Background(),
 		"gemini-2.5-flash",
 		genai.Text(fmt.Sprintf(PROMPT, word)),
 		nil,
@@ -144,7 +191,12 @@ func main() {
 	log.Println("Adding note...")
 	noteID, err := ankiconnect.AddNote(response.toMap())
 	if err != nil {
-		log.Fatalf("failed to add note: %s", err)
+		if strings.Contains(err.Error(), "cannot create note because it is a duplicate") {
+			log.Println("skipping duplicate note")
+			return
+		} else {
+			log.Fatalf("failed to add note: %s", err)
+		}
 	}
 	log.Printf("Added note: %d", noteID)
 
@@ -197,4 +249,57 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 	}
 
 	return nil
+}
+
+func popFirstLine(path string, handle func(line string)) (isEmpty bool, err error) {
+	in, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer in.Close()
+
+	r := bufio.NewReader(in)
+
+	// Read first line (without trailing \n/\r\n)
+	first, err := r.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	if err == io.EOF && len(first) == 0 {
+		// empty file
+		return true, nil
+	}
+
+	// trim new line
+	first = strings.TrimSpace(first)
+
+	handle(first)
+
+	// Create temp file in same dir (so rename is atomic on most systems)
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return false, err
+	}
+	tmpName := tmp.Name()
+
+	// Copy the rest of the original file (everything after the first line) into temp
+	if _, err := io.Copy(tmp, r); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return false, err
+	}
+
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return false, err
+	}
+
+	// Replace original
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return false, err
+	}
+
+	return false, nil
 }
