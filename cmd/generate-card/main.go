@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"google.golang.org/genai"
@@ -125,19 +126,20 @@ func main() {
 	}
 
 	wordFlag := flag.String("word", "", "word to generate a note for")
-	word := *wordFlag
+	limitFlag := flag.Int("limit", 5, "maximum number of notes to generate")
+	flag.Parse()
 
-	limitFlag := flag.Int("limit", 100, "maximum number of notes to generate")
+	word := *wordFlag
 	limit := *limitFlag
-	
+
 	if word == "" {
-		generateNoteForWordsInVocabFile(word, geminiClient, ankiMediaDir, VOCAB_FILE, limit)
+		generateNoteForWordsInVocabFile(geminiClient, ankiMediaDir, VOCAB_FILE, limit)
 	} else {
 		generateNote(word, geminiClient, ankiMediaDir)
 	}
 }
 
-func generateNoteForWordsInVocabFile(word string, geminiClient *genai.Client, ankiMediaDir string, vocabFilePath string, limit int) {
+func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir string, vocabFilePath string, limit int) {
 	isEmpty := false
 	count := 0
 
@@ -154,11 +156,14 @@ func generateNoteForWordsInVocabFile(word string, geminiClient *genai.Client, an
 			break
 		}
 
-		count++ 
+		count++
+
 		if count >= limit {
-			log.Println("reached limit")
+			log.Printf("reached limit %d\n", limit)
 			break
 		}
+		
+		time.Sleep(time.Second * 2)
 	}
 }
 
