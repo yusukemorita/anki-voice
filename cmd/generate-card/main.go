@@ -218,6 +218,11 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 
 	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
 
+	err = ankiconnect.AddNoteTag(note.NoteID, "audio")
+	if err != nil {
+		return err
+	}
+
 	for field, phrase := range note.Phrases {
 		// ignore non breaking spaces
 		text := strings.ReplaceAll(phrase.Value, "&nbsp;", "")
@@ -249,6 +254,11 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 	}
 
 	err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioGeneratedTag)
+	if err != nil {
+		return err
+	}
+
+	err = ankiconnect.RemoveNoteTag(note.NoteID, "audio")
 	if err != nil {
 		return err
 	}
