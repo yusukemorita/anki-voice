@@ -218,7 +218,7 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 
 	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
 
-	err = ankiconnect.AddNoteTag(note.NoteID, "audio")
+	err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioTag)
 	if err != nil {
 		return err
 	}
@@ -258,7 +258,7 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 		return err
 	}
 
-	err = ankiconnect.RemoveNoteTag(note.NoteID, "audio")
+	err = ankiconnect.RemoveNoteTag(note.NoteID, anki.AudioTag)
 	if err != nil {
 		return err
 	}

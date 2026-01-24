@@ -1,3 +1,6 @@
 package anki
 
-const AudioGeneratedTag = "audio-generated"
+const (
+	AudioTag          = "audio"
+	AudioGeneratedTag = "audio-generated"
+)
