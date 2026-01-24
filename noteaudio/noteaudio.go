@@ -28,12 +28,14 @@ func AddAudioToNote(noteID int, ankiMediaDir string, fieldMap map[string]string,
 	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
 
 	for field, phrase := range note.Phrases {
+		// ignore non breaking spaces
 		text := sanitizePhraseText(phrase.Value)
 		if text == "" {
 			continue
 		}
 
 		if phrase.Audio != "" && !options.Overwrite {
+			// audio has already been generated
 			continue
 		}
 
@@ -70,6 +72,7 @@ func AddAudioToNote(noteID int, ankiMediaDir string, fieldMap map[string]string,
 }
 
 func sanitizePhraseText(text string) string {
+	// ignore non breaking spaces
 	trimmed := strings.ReplaceAll(text, "&nbsp;", "")
 	return strings.TrimSpace(trimmed)
 }
