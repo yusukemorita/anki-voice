@@ -34,15 +34,15 @@ const PROMPT = `
 Return the following fields in a JSON structure for the word: %s
 The values will be used for creating Anki cards to learn German vocabulary.
 
+* base_d: the base form the German word.
+  * When a noun, omit the article. e.g. "Abgas".
+	* When a reflexive verb, should start with "sich".
 * full_d: German word. 
   * When a verb, should be a comma separated list of infinitive, present, simple past, and present perfect. e.g. "analysieren, analysiert, analysierte, hat analysiert"
-	  * When a reflexive verb, should include "sich " as a prefix. e.g. "sich amüsieren, amüsiert sich, amüsierte sich, hat sich amüsiert"
+	* When a reflexive verb, should start with "sich". e.g. "sich amüsieren, amüsiert sich, amüsierte sich, hat sich amüsiert"
   * When a noun, should include the article, and the ending in plural. e.g. "das Abgas, -e", "das Alter, -". This is just a combination of the fields artikel_d, base_d, and plural_d.
 * base_e: the English translation. e.g. "to analyze"
   * If an English translation is provided in the prompt, make sure base_e covers what is provided
-* base_d: the base form the German word. 
-  * When a noun, omit the article. e.g. "Abgas".
-  * When plural, convert to singular.
 * artikel_d:
   * When a noun, the article. 
   * When not a noun, blank string
