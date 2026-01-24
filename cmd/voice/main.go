@@ -3,14 +3,9 @@ package main
 import (
 	"anki-voice/anki"
 	"anki-voice/ankiconnect"
-	"anki-voice/audio"
+	"anki-voice/noteaudio"
 	"flag"
-	"fmt"
 	"log"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 )
 
 var (
@@ -27,8 +22,6 @@ var (
 		"s8":     "s8a",
 		"s9":     "s9a",
 	}
-
-	soundRegex        = regexp.MustCompile(`^\[sound:([^\]]+)\]$`)
 )
 
 func main() {
@@ -81,68 +74,17 @@ func main() {
 }
 
 func updateOneNote(noteID int, ankiMediaDir string, tagToRemove string, dryRun, overwrite bool) error {
-	note, err := ankiconnect.GetNote(noteID, fields)
+	err := noteaudio.AddAudioToNote(noteID, ankiMediaDir, fields, noteaudio.Options{
+		DryRun:         dryRun,
+		Overwrite:      overwrite,
+		RemoveOldAudio: true,
+	})
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
-
-	for field, phrase := range note.Phrases {
-		// ignore non breaking spaces
-		text := strings.ReplaceAll(phrase.Value, "&nbsp;", "")
-		text = strings.TrimSpace(text)
-
-		if text == "" {
-			continue
-		}
-
-		if phrase.Audio != "" && !overwrite {
-			// audio has already been generated
-			continue
-		}
-
-		log.Printf("generating audio for: '%s'\n", text)
-		outputPath := fmt.Sprintf("./output/%s.mp3", text)
-		err := audio.GenerateMP3(text, outputPath)
-		if err != nil {
-			return err
-		}
-
-		filename := fmt.Sprintf("%d-%s.mp3", note.NoteID, field)
-		err = os.Rename(outputPath, filepath.Join(ankiMediaDir, filename))
-		if err != nil {
-			return err
-		}
-
-		newAudioFieldValue := fmt.Sprintf("[sound:%s]", filename)
-		if dryRun {
-			log.Printf("skipping note update. audio: %s, tag: %s", newAudioFieldValue, anki.AudioGeneratedTag)
-		} else {
-			log.Printf("updating field in anki: %s\n", text)
-			err = ankiconnect.UpdateNoteField(note.NoteID, fields[field], newAudioFieldValue)
-			if err != nil {
-				return err
-			}
-
-			// delete the old file
-			if phrase.Audio != "" && phrase.Audio != newAudioFieldValue {
-				trimmed := strings.TrimSpace(phrase.Audio)
-				if matches := soundRegex.FindStringSubmatch(trimmed); len(matches) == 2 {
-					oldFilename := matches[1]
-					oldFilePath := filepath.Join(ankiMediaDir, oldFilename)
-					if err := os.Remove(oldFilePath); err != nil {
-						log.Printf("failed to remove old audio %s: %v", oldFilePath, err)
-					}
-				} else {
-					log.Printf("unexpected audio format: %s", phrase.Audio)
-				}
-			}
-		}
+		return err
 	}
 
 	if !dryRun {
-		err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioGeneratedTag)
+		err = ankiconnect.AddNoteTag(noteID, anki.AudioGeneratedTag)
 		if err != nil {
 			return err
 		}

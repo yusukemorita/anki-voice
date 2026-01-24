@@ -3,7 +3,7 @@ package main
 import (
 	"anki-voice/anki"
 	"anki-voice/ankiconnect"
-	"anki-voice/audio"
+	"anki-voice/noteaudio"
 	"bufio"
 	"context"
 	_ "embed"
@@ -119,7 +119,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-  // Gemini setup
+	// Gemini setup
 	geminiClient, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: GEMINI_API_KEY})
 	if err != nil {
 		log.Fatal(err)
@@ -162,7 +162,7 @@ func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir st
 			log.Printf("reached limit %d\n", limit)
 			break
 		}
-		
+
 		time.Sleep(time.Second * 2)
 	}
 }
@@ -211,56 +211,26 @@ func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) 
 }
 
 func addAudioToNote(noteID int, ankiMediaDir string) error {
-	note, err := ankiconnect.GetNote(noteID, audioFields)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("--- note: %s ---", note.Phrases["base_d"].Value)
-
-	log.Printf("adding audio tag to note: %d", note.NoteID)
-	err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioTag)
+	log.Printf("adding audio tag to note: %d", noteID)
+	err := ankiconnect.AddNoteTag(noteID, anki.AudioTag)
 	if err != nil {
 		return err
 	}
 
-	for field, phrase := range note.Phrases {
-		// ignore non breaking spaces
-		text := strings.ReplaceAll(phrase.Value, "&nbsp;", "")
-		text = strings.TrimSpace(text)
-
-		if text == "" {
-			continue
-		}
-
-		log.Printf("generating audio for: '%s'\n", text)
-		outputPath := fmt.Sprintf("./output/%s.mp3", text)
-		err := audio.GenerateMP3(text, outputPath)
-		if err != nil {
-			return err
-		}
-
-		filename := fmt.Sprintf("%d-%s.mp3", note.NoteID, field)
-		err = os.Rename(outputPath, filepath.Join(ankiMediaDir, filename))
-		if err != nil {
-			return err
-		}
-
-		newAudioFieldValue := fmt.Sprintf("[sound:%s]", filename)
-		log.Printf("updating field in anki: %s\n", text)
-		err = ankiconnect.UpdateNoteField(note.NoteID, audioFields[field], newAudioFieldValue)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = ankiconnect.AddNoteTag(note.NoteID, anki.AudioGeneratedTag)
+	err = noteaudio.AddAudioToNote(noteID, ankiMediaDir, audioFields, noteaudio.Options{
+		Overwrite: true,
+	})
 	if err != nil {
 		return err
 	}
 
-	log.Printf("removing audio tag from note: %d", note.NoteID)
-	err = ankiconnect.RemoveNoteTag(note.NoteID, anki.AudioTag)
+	err = ankiconnect.AddNoteTag(noteID, anki.AudioGeneratedTag)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("removing audio tag from note: %d", noteID)
+	err = ankiconnect.RemoveNoteTag(noteID, anki.AudioTag)
 	if err != nil {
 		return err
 	}
