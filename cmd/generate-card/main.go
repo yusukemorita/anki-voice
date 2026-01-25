@@ -131,14 +131,14 @@ func main() {
 	limit := *limitFlag
 
 	if word == "" {
-		generateNoteForWordsInVocabFile(geminiClient, ankiMediaDir, VOCAB_DIR, limit)
+		generateNoteForWordsInVocabDir(geminiClient, ankiMediaDir, VOCAB_DIR, limit)
 	} else {
 		generateNote(word, geminiClient, ankiMediaDir)
 	}
 }
 
-func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir string, vocabDir string, limit int) {
-	entries, err := vocabWordsFromFiles(vocabDir)
+func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir string, vocabDir string, limit int) {
+	entries, err := vocabEntriesFromDir(vocabDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -234,7 +234,7 @@ type vocabEntry struct {
 	path string
 }
 
-func vocabWordsFromFiles(vocabDir string) ([]vocabEntry, error) {
+func vocabEntriesFromDir(vocabDir string) ([]vocabEntry, error) {
 	entries, err := os.ReadDir(vocabDir)
 	if err != nil {
 		return nil, err
@@ -245,15 +245,20 @@ func vocabWordsFromFiles(vocabDir string) ([]vocabEntry, error) {
 		if entry.IsDir() {
 			continue
 		}
+
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") {
+			// ignore hidden files
 			continue
 		}
+
 		base := strings.TrimSuffix(name, filepath.Ext(name))
 		base = strings.TrimSpace(base)
 		if base == "" {
+			// ignore blank file names
 			continue
 		}
+
 		words = append(words, vocabEntry{
 			word: base,
 			path: filepath.Join(vocabDir, name),
