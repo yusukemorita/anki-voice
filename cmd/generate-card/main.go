@@ -12,7 +12,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -106,9 +105,9 @@ func main() {
 		log.Fatal("GEMINI_API_KEY is not set")
 	}
 
-	VOCAB_FILE := os.Getenv("VOCAB_FILE")
-	if GEMINI_API_KEY == "" {
-		log.Fatal("VOCAB_FILE is not set")
+	VOCAB_DIR := os.Getenv("VOCAB_DIR")
+	if VOCAB_DIR == "" {
+		log.Fatal("VOCAB_DIR is not set")
 	}
 
 	// general setup
@@ -132,21 +131,24 @@ func main() {
 	limit := *limitFlag
 
 	if word == "" {
-		generateNoteForWordsInVocabFile(geminiClient, ankiMediaDir, VOCAB_FILE, limit)
+		generateNoteForWordsInVocabFile(geminiClient, ankiMediaDir, VOCAB_DIR, limit)
 	} else {
 		generateNote(word, geminiClient, ankiMediaDir)
 	}
 }
 
-func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir string, vocabFilePath string, limit int) {
-	words, err := vocabWordsFromDirs(vocabFilePath)
+func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir string, vocabDir string, limit int) {
+	entries, err := vocabWordsFromFiles(vocabDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	count := 0
-	for _, word := range words {
-		generateNote(word, geminiClient, ankiMediaDir)
+	for _, entry := range entries {
+		generateNote(entry.word, geminiClient, ankiMediaDir)
+		if err := os.Remove(entry.path); err != nil {
+			log.Fatalf("failed to delete vocab file %s: %v", entry.path, err)
+		}
 		count++
 		if count >= limit {
 			log.Printf("reached limit %d\n", limit)
@@ -227,14 +229,18 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 	return nil
 }
 
-func vocabWordsFromDirs(vocabFilePath string) ([]string, error) {
-	vocabDir := filepath.Join(filepath.Dir(vocabFilePath), "german_vocab")
+type vocabEntry struct {
+	word string
+	path string
+}
+
+func vocabWordsFromFiles(vocabDir string) ([]vocabEntry, error) {
 	entries, err := os.ReadDir(vocabDir)
 	if err != nil {
 		return nil, err
 	}
 
-	words := make([]string, 0, len(entries))
+	words := make([]vocabEntry, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -248,9 +254,11 @@ func vocabWordsFromDirs(vocabFilePath string) ([]string, error) {
 		if base == "" {
 			continue
 		}
-		words = append(words, base)
+		words = append(words, vocabEntry{
+			word: base,
+			path: filepath.Join(vocabDir, name),
+		})
 	}
 
-	sort.Strings(words)
 	return words, nil
 }
