@@ -4,16 +4,15 @@ import (
 	"anki-voice/anki"
 	"anki-voice/ankiconnect"
 	"anki-voice/noteaudio"
-	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -140,29 +139,19 @@ func main() {
 }
 
 func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir string, vocabFilePath string, limit int) {
-	isEmpty := false
+	words, err := vocabWordsFromDirs(vocabFilePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	count := 0
-
-	for {
-		var err error
-		isEmpty, err = popFirstLine(vocabFilePath, func(line string) {
-			generateNote(line, geminiClient, ankiMediaDir)
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if isEmpty {
-			break
-		}
-
+	for _, word := range words {
+		generateNote(word, geminiClient, ankiMediaDir)
 		count++
-
 		if count >= limit {
 			log.Printf("reached limit %d\n", limit)
 			break
 		}
-
 		time.Sleep(time.Second * 2)
 	}
 }
@@ -238,55 +227,30 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 	return nil
 }
 
-func popFirstLine(path string, handle func(line string)) (isEmpty bool, err error) {
-	in, err := os.Open(path)
+func vocabWordsFromDirs(vocabFilePath string) ([]string, error) {
+	vocabDir := filepath.Join(filepath.Dir(vocabFilePath), "german_vocab")
+	entries, err := os.ReadDir(vocabDir)
 	if err != nil {
-		return false, err
-	}
-	defer in.Close()
-
-	r := bufio.NewReader(in)
-
-	// Read first line (without trailing \n/\r\n)
-	first, err := r.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return false, err
-	}
-	if err == io.EOF && len(first) == 0 {
-		// empty file
-		return true, nil
+		return nil, err
 	}
 
-	// trim new line
-	first = strings.TrimSpace(first)
-
-	handle(first)
-
-	// Create temp file in same dir (so rename is atomic on most systems)
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return false, err
-	}
-	tmpName := tmp.Name()
-
-	// Copy the rest of the original file (everything after the first line) into temp
-	if _, err := io.Copy(tmp, r); err != nil {
-		tmp.Close()
-		_ = os.Remove(tmpName)
-		return false, err
+	words := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		base = strings.TrimSpace(base)
+		if base == "" {
+			continue
+		}
+		words = append(words, base)
 	}
 
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return false, err
-	}
-
-	// Replace original
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return false, err
-	}
-
-	return false, nil
+	sort.Strings(words)
+	return words, nil
 }
