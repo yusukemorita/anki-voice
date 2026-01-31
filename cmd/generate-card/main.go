@@ -4,13 +4,11 @@ import (
 	"anki-voice/anki"
 	"anki-voice/ankiconnect"
 	"anki-voice/noteaudio"
-	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -107,9 +105,9 @@ func main() {
 		log.Fatal("GEMINI_API_KEY is not set")
 	}
 
-	VOCAB_FILE := os.Getenv("VOCAB_FILE")
-	if GEMINI_API_KEY == "" {
-		log.Fatal("VOCAB_FILE is not set")
+	VOCAB_DIR := os.Getenv("VOCAB_DIR")
+	if VOCAB_DIR == "" {
+		log.Fatal("VOCAB_DIR is not set")
 	}
 
 	// general setup
@@ -133,36 +131,29 @@ func main() {
 	limit := *limitFlag
 
 	if word == "" {
-		generateNoteForWordsInVocabFile(geminiClient, ankiMediaDir, VOCAB_FILE, limit)
+		generateNoteForWordsInVocabDir(geminiClient, ankiMediaDir, VOCAB_DIR, limit)
 	} else {
 		generateNote(word, geminiClient, ankiMediaDir)
 	}
 }
 
-func generateNoteForWordsInVocabFile(geminiClient *genai.Client, ankiMediaDir string, vocabFilePath string, limit int) {
-	isEmpty := false
+func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir string, vocabDir string, limit int) {
+	entries, err := vocabEntriesFromDir(vocabDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	count := 0
-
-	for {
-		var err error
-		isEmpty, err = popFirstLine(vocabFilePath, func(line string) {
-			generateNote(line, geminiClient, ankiMediaDir)
-		})
-		if err != nil {
-			log.Fatal(err)
+	for _, entry := range entries {
+		generateNote(entry.word, geminiClient, ankiMediaDir)
+		if err := os.Remove(entry.path); err != nil {
+			log.Fatalf("failed to delete vocab file %s: %v", entry.path, err)
 		}
-
-		if isEmpty {
-			break
-		}
-
 		count++
-
 		if count >= limit {
 			log.Printf("reached limit %d\n", limit)
 			break
 		}
-
 		time.Sleep(time.Second * 2)
 	}
 }
@@ -238,55 +229,41 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 	return nil
 }
 
-func popFirstLine(path string, handle func(line string)) (isEmpty bool, err error) {
-	in, err := os.Open(path)
+type vocabEntry struct {
+	word string
+	path string
+}
+
+func vocabEntriesFromDir(vocabDir string) ([]vocabEntry, error) {
+	entries, err := os.ReadDir(vocabDir)
 	if err != nil {
-		return false, err
-	}
-	defer in.Close()
-
-	r := bufio.NewReader(in)
-
-	// Read first line (without trailing \n/\r\n)
-	first, err := r.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return false, err
-	}
-	if err == io.EOF && len(first) == 0 {
-		// empty file
-		return true, nil
+		return nil, err
 	}
 
-	// trim new line
-	first = strings.TrimSpace(first)
+	words := make([]vocabEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
 
-	handle(first)
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			// ignore hidden files
+			continue
+		}
 
-	// Create temp file in same dir (so rename is atomic on most systems)
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
-	if err != nil {
-		return false, err
-	}
-	tmpName := tmp.Name()
+		base := strings.TrimSuffix(name, filepath.Ext(name))
+		base = strings.TrimSpace(base)
+		if base == "" {
+			// ignore blank file names
+			continue
+		}
 
-	// Copy the rest of the original file (everything after the first line) into temp
-	if _, err := io.Copy(tmp, r); err != nil {
-		tmp.Close()
-		_ = os.Remove(tmpName)
-		return false, err
-	}
-
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return false, err
-	}
-
-	// Replace original
-	if err := os.Rename(tmpName, path); err != nil {
-		_ = os.Remove(tmpName)
-		return false, err
+		words = append(words, vocabEntry{
+			word: base,
+			path: filepath.Join(vocabDir, name),
+		})
 	}
 
-	return false, nil
+	return words, nil
 }
