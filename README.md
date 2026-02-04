@@ -19,15 +19,17 @@ go run main.go -note 123456789 # replace 123456789 with the note id
 
 ```sh
 # to only fill in missing audio
-go run cmd/voice/main.go -query "tag:audio"
+go run ./cmd/voice -query "tag:audio"
 # or, to overwrite all audio
-go run cmd/voice/main.go -query "tag:audio" -overwrite
+go run ./cmd/voice -query "tag:audio" -overwrite
 
 # generate audio for all chatgpt generated tags that don't have generated audio yet
-go run cmd/voice/main.go -query "tag:chatgpt-generated -tag:audio-generated"
+go run ./cmd/voice -query "tag:chatgpt-generated -tag:audio-generated"
 
 # generate and overwrite audio for all audio tags, and then remove the tag
-go run cmd/voice/main.go -query "tag:audio" -removetag "audio" -overwrite -limit 10
+go run ./cmd/voice -query "tag:audio" -removetag "audio" -overwrite -limit 10
+# or, use the make command
+make voice 10
 ```
 
 ## generate-card usage
@@ -37,14 +39,16 @@ Prerequisites are the same as `anki-voice`.
 
 ### generate a note for a single word
 
-```console
-go run cmd/generate-card/main.go benehmen
+```sh
+go run ./cmd/generate-card benehmen
 ```
 
 ### generate notes for words in german_vocab.txt
 
-```console
-go run cmd/generate-card/main.go -limit 10
+```sh
+go run ./cmd/generate-card/main.go -limit 10
+# or, use the make command
+make gen 10
 ```
 
 ## references
