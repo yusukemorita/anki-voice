@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -230,8 +231,9 @@ func addAudioToNote(noteID int, ankiMediaDir string) error {
 }
 
 type vocabEntry struct {
-	word string
-	path string
+	word      string
+	path      string
+	createdAt time.Time
 }
 
 func vocabEntriesFromDir(vocabDir string) ([]vocabEntry, error) {
@@ -259,11 +261,25 @@ func vocabEntriesFromDir(vocabDir string) ([]vocabEntry, error) {
 			continue
 		}
 
+		info, err := entry.Info()
+		if err != nil {
+			return nil, err
+		}
+
 		words = append(words, vocabEntry{
-			word: base,
-			path: filepath.Join(vocabDir, name),
+			word:      base,
+			path:      filepath.Join(vocabDir, name),
+			createdAt: fileCreateTime(info),
 		})
 	}
+
+	// sort so that files created earlier come first
+	sort.SliceStable(words, func(i, j int) bool {
+		if words[i].createdAt.Equal(words[j].createdAt) {
+			return words[i].word < words[j].word
+		}
+		return words[i].createdAt.Before(words[j].createdAt)
+	})
 
 	return words, nil
 }
