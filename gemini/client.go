@@ -75,11 +75,11 @@ Return the following fields in a JSON structure for the noun: %s
 This is used for creating Anki cards to learn German vocabulary.
 
 * base_d: the base form the German word. Omit the article.
-* full_d: German noun with article and plural ending. e.g. "das Abgas, -e", "das Alter, -"
+* full_d: German noun with article and full plural form. e.g. "das Abgas, die Abgase", "das Alter, die Alter"
 * base_e: the English translation/meanings. e.g. "exhaust gas"
   * if there area multiple meanings, separate different meanings with a ";", and group similar meanings with "/".
 * artikel_d: the article.
-* plural_d: the plural ending. "-" if the ending does not change, and e.g. "-e" if an "e" is added.
+* plural_d: the full plural form (include the article and plural word). e.g. "die Abgase", "die Alter"
 * s1: 1st example sentence in German
   * Create a typical sentence that starts with the article and noun in nominative.
 * s1e: english translation of s1
@@ -97,6 +97,7 @@ This is used for creating Anki cards to learn German vocabulary.
 
 Other things to note:
 * If the word is in plural, convert it to singular
+* German and English sentences should end with appropriate punctuation (typically ".")
 * Return ONLY the JSON object wrapped in a json code block, and do not include any other content or text.
 `
 
@@ -106,9 +107,9 @@ The values will be used for creating Anki cards to learn German vocabulary.
 
 * base_d: the base form of the German verb. 
   * if the verb is always reflexive, start with "sich".
-* full_d: German verb as a comma separated list of infinitive, present, simple past, and present perfect.
-  * e.g. "analysieren, analysiert, analysierte, hat analysiert"
-  * if the verb is always reflexive, start with "sich". e.g. "sich amüsieren, amüsiert sich, amüsierte sich, hat sich amüsiert"
+* full_d: German verb as a comma separated list of infinitive, 3rd person present, 3rd person simple past, and past participle.
+  * e.g. "analysieren, analysiert, analysierte, analysiert"
+  * if the verb is always reflexive, start with "sich". e.g. "sich amüsieren, amüsiert sich, amüsierte sich, sich amüsiert"
 * base_e: the English translation. e.g. "to analyze"
   * always start with "to"
 * artikel_d: blank string
@@ -127,6 +128,7 @@ The values will be used for creating Anki cards to learn German vocabulary.
 * s4e: english translation of s4
 
 Other things to note:
+* German and English sentences should end with appropriate punctuation (typically ".")
 * Return ONLY the JSON object wrapped in a json code block, and do not include any other content or text.
 `
 
