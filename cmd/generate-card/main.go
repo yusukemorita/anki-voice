@@ -126,7 +126,7 @@ func generateNoteForWordsInVocabDir(geminiClient gemini.Client, ankiMediaDir str
 
 		var apiErr *gemini.APIError
 		if errors.As(generateErr, &apiErr) {
-			detailsStr := fmt.Sprint("%v", apiErr.Details)
+			detailsStr := fmt.Sprintf("%v", apiErr.Details)
 
 			delay, err := extractRetryDelay(detailsStr)
 			if err != nil {
