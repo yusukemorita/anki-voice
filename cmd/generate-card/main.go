@@ -7,12 +7,15 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,8 +127,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// check that anki is running
+	_, err = ankiconnect.QueryNotes("test")
+	if err != nil {
+		log.Fatalf("error response from anki, is anki running?\n%s", err)
+	}
+
 	wordFlag := flag.String("word", "", "word to generate a note for")
-	limitFlag := flag.Int("limit", 5, "maximum number of notes to generate")
+	limitFlag := flag.Int("limit", 50, "maximum number of notes to generate")
 	flag.Parse()
 
 	word := *wordFlag
@@ -146,7 +155,27 @@ func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir str
 
 	count := 0
 	for _, entry := range entries {
-		generateNote(entry.word, geminiClient, ankiMediaDir)
+		generateErr := generateNote(entry.word, geminiClient, ankiMediaDir)
+
+		var apiErr *genai.APIError
+		if errors.As(err, apiErr) {
+			detailsStr := fmt.Sprint("%v", apiErr.Details)
+
+			delay, err := extractRetryDelay(detailsStr)
+			if err != nil{
+				log.Fatalf("failed to extract retry delay. original gemini error:\n%s\n\nextract error:\n%s\n", generateErr, err)
+			}
+
+			log.Printf("retry delay: %v", delay)
+			time.Sleep(delay)
+
+			// retry after delay, this time fail if error is returned
+			err = generateNote(entry.word, geminiClient, ankiMediaDir)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
 		if err := os.Remove(entry.path); err != nil {
 			log.Fatalf("failed to delete vocab file %s: %v", entry.path, err)
 		}
@@ -159,7 +188,7 @@ func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir str
 	}
 }
 
-func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) {
+func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) error {
 	// retrieve result from Gemini
 	result, err := geminiClient.Models.GenerateContent(
 		context.Background(),
@@ -168,7 +197,7 @@ func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) 
 		nil,
 	)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	log.Printf("Gemini response: \n%s\n", result.Text())
 
@@ -181,7 +210,7 @@ func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) 
 	var response GeminiResponse
 	err = json.Unmarshal([]byte(jsonText), &response)
 	if err != nil {
-		log.Fatalf("failed to unmarshal response:\n%s\n", result.Text())
+		return err
 	}
 
 	// add the note
@@ -190,9 +219,9 @@ func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) 
 	if err != nil {
 		if strings.Contains(err.Error(), "cannot create note because it is a duplicate") {
 			log.Println("skipping duplicate note")
-			return
+			return nil
 		} else {
-			log.Fatalf("failed to add note: %s", err)
+			return err
 		}
 	}
 	log.Printf("Added note: %d", noteID)
@@ -200,6 +229,8 @@ func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) 
 	// add audio to the note
 	addAudioToNote(noteID, ankiMediaDir)
 	log.Printf("Added audio to note: %d", noteID)
+
+	return nil
 }
 
 func addAudioToNote(noteID int, ankiMediaDir string) error {
@@ -282,4 +313,19 @@ func vocabEntriesFromDir(vocabDir string) ([]vocabEntry, error) {
 	})
 
 	return words, nil
+}
+
+func extractRetryDelay(errorMessage string) (time.Duration, error) {
+	var retryDelayRegex = regexp.MustCompile(`"retryDelay"\s*:\s*"(\d+)s"`)
+	m := retryDelayRegex.FindStringSubmatch(errorMessage)
+	if m == nil {
+		return time.Second * 0, fmt.Errorf("no regex match")
+	}
+
+	seconds, err := strconv.Atoi(m[1]) // m[1] is the captured digits
+	if err != nil {
+		return time.Second * 0, fmt.Errorf("bad number. match: %s, err: %s", m[1], err)
+	}
+
+	return time.Duration(seconds) * time.Second, nil
 }
