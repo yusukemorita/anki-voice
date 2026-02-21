@@ -27,7 +27,7 @@ var (
 func main() {
 	// flags setup
 	noteIDFlag := flag.Int("note", 0, "noteID to update audio of")
-	limitFlag := flag.Int("limit", 0, "limit the number of cards to update")
+	limitFlag := flag.Int("limit", 100, "limit the number of cards to update")
 	dryRunFlag := flag.Bool("dryrun", false, "set to true to skip update of the note in anki")
 	queryFlag := flag.String("query", "", "use an anki query to filter which cards to update")
 	overwriteFlag := flag.Bool("overwrite", false, "set to true to overwrite existing audio")
