@@ -10,7 +10,7 @@ import (
 
 type APIError = genai.APIError
 
-const	noteModel = "gemini-2.5-flash"
+const noteModel = "gemini-2.5-flash"
 
 func NewClient(ctx context.Context, apiKey string) (*GeminiClient, error) {
 	inner, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
