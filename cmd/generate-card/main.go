@@ -3,10 +3,10 @@ package main
 import (
 	"anki-voice/anki"
 	"anki-voice/ankiconnect"
+	"anki-voice/gemini"
 	"anki-voice/noteaudio"
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"google.golang.org/genai"
 )
 
 // key: field in German, value: audio field
@@ -30,73 +29,6 @@ var audioFields = map[string]string{
 	"s2":     "s2a",
 	"s3":     "s3a",
 	"s4":     "s4a",
-}
-
-const PROMPT = `
-Return the following fields in a JSON structure for the word: %s
-The values will be used for creating Anki cards to learn German vocabulary.
-
-* base_d: the base form the German word.
-  * When a noun, omit the article. e.g. "Abgas".
-	* When a reflexive verb, should start with "sich".
-* full_d: German word. 
-  * When a verb, should be a comma separated list of infinitive, present, simple past, and present perfect. e.g. "analysieren, analysiert, analysierte, hat analysiert"
-	* When a reflexive verb, should start with "sich". e.g. "sich amüsieren, amüsiert sich, amüsierte sich, hat sich amüsiert"
-  * When a noun, should include the article, and the ending in plural. e.g. "das Abgas, -e", "das Alter, -". This is just a combination of the fields artikel_d, base_d, and plural_d.
-* base_e: the English translation. e.g. "to analyze"
-  * If an English translation is provided in the prompt, make sure base_e covers what is provided
-* artikel_d:
-  * When a noun, the article. 
-  * When not a noun, blank string
-* plural_d: 
-  * When a noun, the plural ending. "-" if the ending does not change, and e.g. "-e" if an "e" is added.
-  * When not a noun, blank string
-* s1: The first example sentence in German. Create a typical sentence that the word would be used in.
-* s1e: The English translation of s1.
-* s2: The second example sentence in German. If there is more than one meaning of the word, then create a sentence that demonstrates a use of the second meaning.
-* s2e: The English translation of s2.
-* s3: The third example sentence in German. Only include If there are more than two commonly used meanings of the word. Otherwise, leave blank.
-* s3e: The English translation of s3.
-* s4: The fourth example sentence in German. Only include If there are more than three commonly used meanings of the word. Otherwise, leave blank.
-* s4e: The English translation of s4.
-
-Other things to note: 
-* If the word is in plural, convert it to singular
-* Return ONLY the JSON object wrapped in a json code block, and do not include any other content or text.
-`
-
-type GeminiResponse struct {
-	FullDeutsch    string `json:"full_d"`
-	BaseDeutsch    string `json:"base_d"`
-	BaseEnglish    string `json:"base_e"`
-	ArticleDeutsch string `json:"artikel_d"`
-	PluralDeutsch  string `json:"plural_d"`
-	S1             string
-	S1e            string
-	S2             string
-	S2e            string
-	S3             string
-	S3e            string
-	S4             string
-	S4e            string
-}
-
-func (response GeminiResponse) toMap() map[string]string {
-	return map[string]string{
-		"full_d":    response.FullDeutsch,
-		"base_d":    response.BaseDeutsch,
-		"base_e":    response.BaseEnglish,
-		"artikel_d": response.ArticleDeutsch,
-		"plural_d":  response.PluralDeutsch,
-		"s1":        response.S1,
-		"s1e":       response.S1e,
-		"s2":        response.S2,
-		"s2e":       response.S2e,
-		"s3":        response.S3,
-		"s3e":       response.S3e,
-		"s4":        response.S4,
-		"s4e":       response.S4e,
-	}
 }
 
 func main() {
@@ -122,7 +54,7 @@ func main() {
 	}
 
 	// Gemini setup
-	geminiClient, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: GEMINI_API_KEY})
+	geminiClient, err := gemini.NewClient(ctx, GEMINI_API_KEY)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -147,7 +79,7 @@ func main() {
 	}
 }
 
-func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir string, vocabDir string, limit int) {
+func generateNoteForWordsInVocabDir(geminiClient *gemini.GeminiClient, ankiMediaDir string, vocabDir string, limit int) {
 	entries, err := vocabEntriesFromDir(vocabDir)
 	if err != nil {
 		log.Fatal(err)
@@ -157,12 +89,12 @@ func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir str
 	for _, entry := range entries {
 		generateErr := generateNote(entry.word, geminiClient, ankiMediaDir)
 
-		var apiErr *genai.APIError
-		if errors.As(err, apiErr) {
-			detailsStr := fmt.Sprint("%v", apiErr.Details)
+		var apiErr *gemini.APIError
+		if errors.As(generateErr, &apiErr) {
+			detailsStr := fmt.Sprintf("%v", apiErr.Details)
 
 			delay, err := extractRetryDelay(detailsStr)
-			if err != nil{
+			if err != nil {
 				log.Fatalf("failed to extract retry delay. original gemini error:\n%s\n\nextract error:\n%s\n", generateErr, err)
 			}
 
@@ -170,9 +102,9 @@ func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir str
 			time.Sleep(delay)
 
 			// retry after delay, this time fail if error is returned
-			err = generateNote(entry.word, geminiClient, ankiMediaDir)
-			if err != nil {
-				log.Fatal(err)
+			generateErr = generateNote(entry.word, geminiClient, ankiMediaDir)
+			if generateErr != nil {
+				log.Fatal(generateErr)
 			}
 		}
 
@@ -188,34 +120,31 @@ func generateNoteForWordsInVocabDir(geminiClient *genai.Client, ankiMediaDir str
 	}
 }
 
-func generateNote(word string, geminiClient *genai.Client, ankiMediaDir string) error {
-	// retrieve result from Gemini
-	result, err := geminiClient.Models.GenerateContent(
-		context.Background(),
-		"gemini-2.5-flash",
-		genai.Text(fmt.Sprintf(PROMPT, word)),
-		nil,
-	)
+func generateNote(word string, geminiClient *gemini.GeminiClient, ankiMediaDir string) error {
+	category, err := geminiClient.DetectCategory(context.Background(), word)
 	if err != nil {
 		return err
 	}
-	log.Printf("Gemini response: \n%s\n", result.Text())
+	log.Printf("Detected category: %s", category)
 
-	// remove the code block that Gemini prefers to add to the response
-	jsonText := result.Text()
-	jsonText = strings.TrimPrefix(jsonText, "```json")
-	jsonText = strings.TrimSuffix(jsonText, "```")
-
-	// unmarshal the JSON that was in the code block
-	var response GeminiResponse
-	err = json.Unmarshal([]byte(jsonText), &response)
+	var response gemini.GeminiResponse
+	switch category {
+	case gemini.CategoryNoun:
+		response, err = geminiClient.GenerateNounJSON(context.Background(), word)
+	case gemini.CategoryVerb:
+		response, err = geminiClient.GenerateVerbJSON(context.Background(), word)
+	case gemini.CategoryOther:
+		response, err = geminiClient.GenerateOtherJSON(context.Background(), word)
+	default:
+		return fmt.Errorf("unexpected category: %s", category)
+	}
 	if err != nil {
 		return err
 	}
 
 	// add the note
 	log.Println("Adding note...")
-	noteID, err := ankiconnect.AddNote(response.toMap())
+	noteID, err := ankiconnect.AddNote(response.ToMap())
 	if err != nil {
 		if strings.Contains(err.Error(), "cannot create note because it is a duplicate") {
 			log.Println("skipping duplicate note")
