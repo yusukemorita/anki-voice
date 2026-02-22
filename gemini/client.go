@@ -2,20 +2,51 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"google.golang.org/genai"
 )
 
-type Client interface {
-	GenerateNoteJSON(ctx context.Context, word string) (string, error)
-}
-
 type APIError = genai.APIError
 
-type client struct {
+type GeminiClient struct {
 	inner *genai.Client
+}
+
+type GeminiResponse struct {
+	FullDeutsch    string `json:"full_d"`
+	BaseDeutsch    string `json:"base_d"`
+	BaseEnglish    string `json:"base_e"`
+	ArticleDeutsch string `json:"artikel_d"`
+	PluralDeutsch  string `json:"plural_d"`
+	S1             string
+	S1e            string
+	S2             string
+	S2e            string
+	S3             string
+	S3e            string
+	S4             string
+	S4e            string
+}
+
+func (response GeminiResponse) ToMap() map[string]string {
+	return map[string]string{
+		"full_d":    response.FullDeutsch,
+		"base_d":    response.BaseDeutsch,
+		"base_e":    response.BaseEnglish,
+		"artikel_d": response.ArticleDeutsch,
+		"plural_d":  response.PluralDeutsch,
+		"s1":        response.S1,
+		"s1e":       response.S1e,
+		"s2":        response.S2,
+		"s2e":       response.S2e,
+		"s3":        response.S3,
+		"s3e":       response.S3e,
+		"s4":        response.S4,
+		"s4e":       response.S4e,
+	}
 }
 
 type Category string
@@ -27,12 +58,6 @@ const (
 
 	noteModel = "gemini-2.5-flash"
 )
-
-var prompts = map[Category]string{
-	CategoryNoun:  nounPromptTemplate,
-	CategoryVerb:  verbPromptTemplate,
-	CategoryOther: notePromptTemplate,
-}
 
 const notePromptTemplate = `
 Return the following fields in a JSON structure for the word: %s
@@ -69,6 +94,10 @@ Other things to note:
 * If the word is in plural, convert it to singular
 * Return ONLY the JSON object wrapped in a json code block, and do not include any other content or text.
 `
+
+const detectCategoryPromptTemplate = `Classify the German word into one category: noun, verb, or other.
+Word: %s
+Return only the category word.`
 
 const nounPromptTemplate = `
 Return the following fields in a JSON structure for the noun: %s
@@ -132,22 +161,28 @@ Other things to note:
 * Return ONLY the JSON object wrapped in a json code block, and do not include any other content or text.
 `
 
-func NewClient(ctx context.Context, apiKey string) (Client, error) {
+func NewClient(ctx context.Context, apiKey string) (*GeminiClient, error) {
 	inner, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 	if err != nil {
 		return nil, err
 	}
 
-	return &client{inner: inner}, nil
+	return &GeminiClient{inner: inner}, nil
 }
 
-func (c *client) GenerateNoteJSON(ctx context.Context, word string) (string, error) {
-	category, err := c.detectCategory(ctx, word)
-	if err != nil {
-		return "", err
-	}
+func (c *GeminiClient) GenerateVerbJSON(ctx context.Context, word string) (GeminiResponse, error) {
+	return c.generateNoteJSON(ctx, word, verbPromptTemplate)
+}
 
-	prompt := prompts[category]
+func (c *GeminiClient) GenerateNounJSON(ctx context.Context, word string) (GeminiResponse, error) {
+	return c.generateNoteJSON(ctx, word, nounPromptTemplate)
+}
+
+func (c *GeminiClient) GenerateOtherJSON(ctx context.Context, word string) (GeminiResponse, error) {
+	return c.generateNoteJSON(ctx, word, notePromptTemplate)
+}
+
+func (c *GeminiClient) generateNoteJSON(ctx context.Context, word string, prompt string) (GeminiResponse, error) {
 	result, err := c.inner.Models.GenerateContent(
 		ctx,
 		noteModel,
@@ -155,17 +190,14 @@ func (c *client) GenerateNoteJSON(ctx context.Context, word string) (string, err
 		nil,
 	)
 	if err != nil {
-		return "", err
+		return GeminiResponse{}, err
 	}
 
-	return result.Text(), nil
+	return parseResponse(result.Text())
 }
 
-func (c *client) detectCategory(ctx context.Context, word string) (Category, error) {
-	prompt := fmt.Sprintf(
-		"Classify the German word into one category: noun, verb, or other.\nWord: %s\nReturn only the category word.",
-		word,
-	)
+func (c *GeminiClient) DetectCategory(ctx context.Context, word string) (Category, error) {
+	prompt := fmt.Sprintf(detectCategoryPromptTemplate, word)
 
 	result, err := c.inner.Models.GenerateContent(
 		ctx,
@@ -184,4 +216,16 @@ func (c *client) detectCategory(ctx context.Context, word string) (Category, err
 	default:
 		return "", fmt.Errorf("unexpected category from Gemini: %q", category)
 	}
+}
+
+func parseResponse(text string) (GeminiResponse, error) {
+	jsonText := strings.TrimPrefix(text, "```json")
+	jsonText = strings.TrimSuffix(jsonText, "```")
+
+	var response GeminiResponse
+	if err := json.Unmarshal([]byte(jsonText), &response); err != nil {
+		return GeminiResponse{}, err
+	}
+
+	return response, nil
 }

@@ -7,7 +7,6 @@ import (
 	"anki-voice/noteaudio"
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,40 +29,6 @@ var audioFields = map[string]string{
 	"s2":     "s2a",
 	"s3":     "s3a",
 	"s4":     "s4a",
-}
-
-type GeminiResponse struct {
-	FullDeutsch    string `json:"full_d"`
-	BaseDeutsch    string `json:"base_d"`
-	BaseEnglish    string `json:"base_e"`
-	ArticleDeutsch string `json:"artikel_d"`
-	PluralDeutsch  string `json:"plural_d"`
-	S1             string
-	S1e            string
-	S2             string
-	S2e            string
-	S3             string
-	S3e            string
-	S4             string
-	S4e            string
-}
-
-func (response GeminiResponse) toMap() map[string]string {
-	return map[string]string{
-		"full_d":    response.FullDeutsch,
-		"base_d":    response.BaseDeutsch,
-		"base_e":    response.BaseEnglish,
-		"artikel_d": response.ArticleDeutsch,
-		"plural_d":  response.PluralDeutsch,
-		"s1":        response.S1,
-		"s1e":       response.S1e,
-		"s2":        response.S2,
-		"s2e":       response.S2e,
-		"s3":        response.S3,
-		"s3e":       response.S3e,
-		"s4":        response.S4,
-		"s4e":       response.S4e,
-	}
 }
 
 func main() {
@@ -114,7 +79,7 @@ func main() {
 	}
 }
 
-func generateNoteForWordsInVocabDir(geminiClient gemini.Client, ankiMediaDir string, vocabDir string, limit int) {
+func generateNoteForWordsInVocabDir(geminiClient *gemini.GeminiClient, ankiMediaDir string, vocabDir string, limit int) {
 	entries, err := vocabEntriesFromDir(vocabDir)
 	if err != nil {
 		log.Fatal(err)
@@ -155,29 +120,31 @@ func generateNoteForWordsInVocabDir(geminiClient gemini.Client, ankiMediaDir str
 	}
 }
 
-func generateNote(word string, geminiClient gemini.Client, ankiMediaDir string) error {
-	// retrieve result from Gemini
-	result, err := geminiClient.GenerateNoteJSON(context.Background(), word)
+func generateNote(word string, geminiClient *gemini.GeminiClient, ankiMediaDir string) error {
+	category, err := geminiClient.DetectCategory(context.Background(), word)
 	if err != nil {
 		return err
 	}
-	log.Printf("Gemini response: \n%s\n", result)
+	log.Printf("Detected category: %s", category)
 
-	// remove the code block that Gemini prefers to add to the response
-	jsonText := result
-	jsonText = strings.TrimPrefix(jsonText, "```json")
-	jsonText = strings.TrimSuffix(jsonText, "```")
-
-	// unmarshal the JSON that was in the code block
-	var response GeminiResponse
-	err = json.Unmarshal([]byte(jsonText), &response)
+	var response gemini.GeminiResponse
+	switch category {
+	case gemini.CategoryNoun:
+		response, err = geminiClient.GenerateNounJSON(context.Background(), word)
+	case gemini.CategoryVerb:
+		response, err = geminiClient.GenerateVerbJSON(context.Background(), word)
+	case gemini.CategoryOther:
+		response, err = geminiClient.GenerateOtherJSON(context.Background(), word)
+	default:
+		return fmt.Errorf("unexpected category: %s", category)
+	}
 	if err != nil {
 		return err
 	}
 
 	// add the note
 	log.Println("Adding note...")
-	noteID, err := ankiconnect.AddNote(response.toMap())
+	noteID, err := ankiconnect.AddNote(response.ToMap())
 	if err != nil {
 		if strings.Contains(err.Error(), "cannot create note because it is a duplicate") {
 			log.Println("skipping duplicate note")
